@@ -395,10 +395,18 @@ order over a single connection, with the client filling in `seq` and `type`
 and waiting for the matching response. Framing is
 `Content-Length: <n>\r\n\r\n<json>`.
 
-Any DAP client will do. The transcripts in this document came from a small
-purpose-built one that also walks `stackTrace` → `scopes` → `variables`
-recursively and batches `evaluate` calls, because those steps need the
-previous reply before the next request can be built.
+Any DAP client will do. The transcripts in this document came from
+[`tools/dapprobe`](../tools/dapprobe), the reference client in this
+repository, which also walks `stackTrace` → `scopes` → `variables`
+recursively and batches `evaluate` calls — those steps need the previous reply
+before the next request can be built, so they are directives rather than
+script lines:
+
+```
+cd tools/dapprobe
+go run . -script sessions/inspect.jsonl
+go run . -script sessions/logpoint-tap.jsonl -idle 6
+```
 
 **Inspect the scope tree at a halt.** Pauses the game, walks everything in
 scope, evaluates a few expressions, resumes. Note the `continue` before

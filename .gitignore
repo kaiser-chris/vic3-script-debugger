@@ -1,0 +1,6 @@
+# Go probe binaries
+/tools/dapprobe/dapprobe
+/tools/dapprobe/dapprobe.exe
+
+# IDE
+/.idea/

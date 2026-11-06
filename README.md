@@ -28,6 +28,20 @@ this is being built from — the complete command surface, what `evaluate`
 accepts, the catalogue of readable data, the protocol's traps, and two
 reproducible sessions. Read it before touching the client code.
 
+**[tools/dapprobe](tools/dapprobe)** is a reference client: a small Go DAP
+probe that runs a session from a `.jsonl` script and prints the traffic. Every
+transcript in the spec came from it. Use it to settle a protocol question
+against a running game before committing the plugin to an assumption.
+
+```
+cd tools/dapprobe
+go run . -script sessions/inspect.jsonl        # pause, walk the scope tree, resume
+go run . -script sessions/logpoint-tap.jsonl   # non-halting value stream
+```
+
+It is a probe, not a library — the plugin will speak DAP through IntelliJ, not
+through this. It is a separate Go module so it stays out of the JVM build.
+
 ## The short version
 
 - **Every read needs a halt.** `stackTrace`, `scopes`, `variables` and

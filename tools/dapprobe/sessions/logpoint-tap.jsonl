@@ -1,0 +1,10 @@
+# A non-halting data tap: install a logpoint whose message interpolates an
+# expression, then just listen. The game never pauses; every evaluation of that
+# line emits an output event with the value substituted.
+{"command":"initialize","arguments":{"clientID":"dapprobe","adapterID":"jomini","linesStartAt1":true,"columnsStartAt1":true,"pathFormat":"path"}}
+{"command":"launch","arguments":{}}
+{"command":"setBreakpoints","arguments":{"source":{"path":"gfx/map/spline_network/route_graphics/01_road_vehicles.txt"},"breakpoints":[{"line":63,"logMessage":"tap gdp={this.gdp}"}]}}
+{"command":"configurationDone","arguments":{}}
+{"_wait":5.0}
+{"command":"setBreakpoints","arguments":{"source":{"path":"gfx/map/spline_network/route_graphics/01_road_vehicles.txt"},"breakpoints":[]}}
+{"command":"disconnect","arguments":{}}

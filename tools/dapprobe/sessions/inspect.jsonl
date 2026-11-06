@@ -1,0 +1,13 @@
+# Pause the game, walk the scope tree, evaluate a few values, resume.
+# Always ends with continue + disconnect: a session that exits while halted
+# leaves the game frozen.
+{"command":"initialize","arguments":{"clientID":"dapprobe","adapterID":"jomini","linesStartAt1":true,"columnsStartAt1":true,"pathFormat":"path"}}
+{"command":"launch","arguments":{}}
+{"command":"configurationDone","arguments":{}}
+{"_wait":0.3}
+{"command":"pause","arguments":{"threadId":1}}
+{"_wait":1.2}
+{"_explore":true}
+{"_eval":["this.gdp","this.population","this.literacy","this.capital.gdp","is_at_war = yes","country_rank >= rank_value:great_power"],"frameId":0,"context":"repl"}
+{"command":"continue","arguments":{"threadId":1}}
+{"command":"disconnect","arguments":{}}
