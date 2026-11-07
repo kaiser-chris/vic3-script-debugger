@@ -100,4 +100,4 @@ first version has to be uploaded by hand at
 
 ## Licence
 
-Not yet chosen.
+[MIT](LICENSE)
