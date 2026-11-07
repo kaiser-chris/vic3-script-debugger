@@ -13,6 +13,8 @@ kotlin {
 dependencies {
     intellijPlatform {
         intellijIdea(providers.gradleProperty("platformVersion").get())
+        // The XDebugger API: breakpoints, debug sessions, frames and values.
+        bundledModule("intellij.platform.debugger")
     }
 
     testImplementation(platform(libs.junit.bom))
@@ -29,6 +31,13 @@ intellijPlatform {
         version = providers.gradleProperty("pluginVersion")
         ideaVersion {
             sinceBuild = providers.gradleProperty("pluginSinceBuild")
+        }
+    }
+
+    // gradlew verifyPlugin: binary compatibility against the IDE this targets.
+    pluginVerification {
+        ides {
+            current()
         }
     }
 }

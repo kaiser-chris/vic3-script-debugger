@@ -4,25 +4,28 @@
     <vendor>Chris Kaiser</vendor>
 
     <description><![CDATA[
-    Connects to the script debugger built into Victoria 3 (1.15.0 and later), for breakpoints and
-    evaluation in Jomini script. Start the game with <code>-script_debugger</code>, then use
-    <b>Tools | Attach to Victoria 3</b>.
+    Debugs Jomini script against a running Victoria 3 (1.15.0 and later) through the game's built-in
+    script debugger: line breakpoints and logpoints, stepping, the game's scopes in the Variables view,
+    and evaluation of script values and triggers. Start the game with <code>-script_debugger</code>, then
+    debug a <b>Victoria 3 Script Debugger</b> run configuration.
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.xdebugger</depends>
 
     <resource-bundle>messages.Vic3Bundle</resource-bundle>
 
     <extensions defaultExtensionNs="com.intellij">
-        <notificationGroup id="Victoria 3 Script Debugger" displayType="BALLOON" key="notification.group.name"/>
+        <configurationType implementation="de.bahmut.vic3debugger.run.Vic3ConfigurationType"/>
+        <programRunner implementation="de.bahmut.vic3debugger.run.Vic3DebugRunner"/>
+        <xdebugger.breakpointType implementation="de.bahmut.vic3debugger.debugger.Vic3LineBreakpointType"/>
+        <editorFloatingToolbarProvider implementation="de.bahmut.vic3debugger.editor.LoadedModToolbarProvider"
+                                       id="Vic3ScriptDebuggerLoadedMod"/>
     </extensions>
 
     <actions>
-        <group id="Vic3ScriptDebugger.ToolsGroup">
-            <add-to-group group-id="ToolsMenu" anchor="last"/>
-            <separator/>
-            <action id="Vic3ScriptDebugger.Attach" class="de.bahmut.vic3debugger.actions.AttachToGameAction"/>
-            <action id="Vic3ScriptDebugger.Detach" class="de.bahmut.vic3debugger.actions.DetachFromGameAction"/>
+        <group id="Vic3ScriptDebugger.EditorFloatingToolbar">
+            <action id="Vic3ScriptDebugger.LoadedModIndicator" class="de.bahmut.vic3debugger.editor.LoadedModIndicatorAction"/>
         </group>
     </actions>
 </idea-plugin>

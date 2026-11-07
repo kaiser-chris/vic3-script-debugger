@@ -49,15 +49,38 @@ finds or provisions a Java 25 toolchain itself, and runs on any JDK 17 or later.
 
 ```
 gradlew test               # unit tests
-gradlew test -Plive        # also attach to a running game started with -script_debugger
-gradlew runIde             # try it in a sandbox IDE: Tools | Attach to Victoria 3
+gradlew test -Plive        # also run against a game started with -script_debugger
+gradlew runIde             # try it in a sandbox IDE
 gradlew buildPlugin        # build/distributions/vic3-script-debugger-<version>.zip
+gradlew verifyPlugin       # JetBrains Plugin Verifier against the targeted IDE
 ```
 
-So far it is a harness only. It finds running `victoria3.exe` processes, reads the
-port from `-script_debugger=<port>` in their command line (6111 when the option
-has no value), attaches, and detaches cleanly. The live test only attaches and
-lists threads: it never halts the game or evaluates anything.
+To debug, add a **Victoria 3 Script Debugger** run configuration and start it with
+Debug. With automatic detection on, it finds the running `victoria3.exe` and reads
+the port from `-script_debugger=<port>` (6111 when the option has no value);
+otherwise it uses the port you enter. If no game is running, the option is
+missing, or nothing is listening, the run fails with a message saying which.
+
+Once attached:
+
+- **Breakpoints** go on any line of a `.txt` or `.gui` file in a mod or the base
+  game. Files are matched to the game by mod name and path inside the mod, so a
+  repository opened from anywhere works. Breakpoints on files the game does not
+  load, or that a later mod overrides, are marked invalid with the reason.
+  Conditions are sent to the game; non-suspending breakpoints become logpoints.
+- **Halts** show the game's script stack, with the scopes (`this`, `root`, `prev`,
+  saved scopes) and their script variables in the Variables view. Stepping,
+  Evaluate and watches work in the frame's context.
+- **The console** shows logpoint output and the game's script errors as they happen.
+- **Stopping** clears the breakpoints, resumes a halted game and detaches. The game
+  keeps running.
+
+Files that belong to a loaded mod show an indicator in the editor's top-right
+toolbar, saying which mod, whether the game is running, and whether this copy
+matches the one the game loaded.
+
+The live tests (`-Plive`) attach to a running game. One sets a breakpoint and
+halts the game briefly, then clears it and resumes.
 
 ## The short version
 

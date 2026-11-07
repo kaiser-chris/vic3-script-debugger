@@ -13,7 +13,8 @@ import java.util.concurrent.TimeUnit
  * Attaching never halts the game. Blocking: call off the EDT.
  */
 class GameSession private constructor(
-    val game: GameProcess,
+    /** The process, when it could be identified; null when attaching to a port with no matching process. */
+    val game: GameProcess?,
     val port: Int,
     val connection: DapConnection,
     /** The `initialize` response body: the only reliable statement of what the server supports. */
@@ -24,11 +25,25 @@ class GameSession private constructor(
     var isHalted: Boolean = false
         private set
 
-    internal fun onEvent(event: String) {
+    /** Receives events once someone owns the session. Events that arrive before then are dropped. */
+    @Volatile
+    var eventListener: (event: String, body: JsonObject?) -> Unit = { _, _ -> }
+
+    /** Called once when the connection ends, with the cause when it was not closed on purpose. */
+    @Volatile
+    var closeListener: (cause: Throwable?) -> Unit = {}
+
+    internal fun onEvent(event: String, body: JsonObject?) {
         when (event) {
             "stopped" -> isHalted = true
             "continued" -> isHalted = false
         }
+        eventListener(event, body)
+    }
+
+    /** Marks the game as running again after a request that resumes it (continue, next, stepIn, stepOut). */
+    fun markResumed() {
+        isHalted = false
     }
 
     /**
@@ -52,17 +67,16 @@ class GameSession private constructor(
         // The game reports one thread, id 1. Stopped events may name other ids; requests with 1 work (§3).
         private fun threadArgs() = buildJsonObject { put("threadId", JsonPrimitive(1)) }
 
-        fun attach(
-            game: GameProcess,
-            onEvent: (event: String, body: JsonObject?) -> Unit = { _, _ -> },
-            onClosed: (cause: Throwable?) -> Unit = {},
-        ): GameSession {
-            val port = requireNotNull(game.debuggerPort) { "Game ${game.pid} was not started with -script_debugger" }
+        fun attach(game: GameProcess): GameSession = attach(game, requireNotNull(game.debuggerPort) {
+            "Game ${game.pid} was not started with -script_debugger"
+        })
+
+        fun attach(game: GameProcess?, port: Int): GameSession {
             var session: GameSession? = null
             val connection = DapConnection.open(
                 port,
-                onEvent = { event, body -> session?.onEvent(event); onEvent(event, body) },
-                onClosed = onClosed,
+                onEvent = { event, body -> session?.onEvent(event, body) },
+                onClosed = { cause -> session?.closeListener?.invoke(cause) },
             )
             try {
                 val capabilities = connection.request("initialize", buildJsonObject {

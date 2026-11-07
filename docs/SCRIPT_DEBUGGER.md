@@ -472,8 +472,10 @@ second, whereas `evaluate` manages about 90.
 Paths are not case-sensitive, and backslashes were accepted as well. The path has
 to be in `source.path`: the same value in `source.name` comes back unverified.
 
-`stackTrace` frames return only `source.name` (VFS-relative), never
-`source.path`, so a plugin has to map back to workspace files itself — by VFS
+`stackTrace` frames return `source.name` (VFS-relative). On 2026-11-07 a frame on
+a line with a breakpoint also carried `source.path`, equal to `source.name`, which
+earlier sessions never showed. Neither is ever an absolute path, so a plugin has
+to map back to workspace files itself — by VFS
 path against the game directory and each active mod, in mod load order.
 
 ### Mapping editor files to loaded files
