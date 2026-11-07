@@ -10,6 +10,7 @@ import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.xdebugger.XDebugProcess
 import com.intellij.xdebugger.XDebugSession
 import com.intellij.xdebugger.XDebuggerUtil
+import com.intellij.xdebugger.XSourcePosition
 import com.intellij.xdebugger.breakpoints.SuspendPolicy
 import com.intellij.xdebugger.breakpoints.XBreakpointHandler
 import com.intellij.xdebugger.breakpoints.XLineBreakpoint
@@ -25,6 +26,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import java.nio.file.Paths
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -88,6 +90,31 @@ class Vic3DebugProcess(
     override fun startStepOut(context: XSuspendContext?) = resuming("stepOut")
 
     override fun stop() = cleanUp()
+
+    /**
+     * Run to Cursor. The game has no such request, so this sets a temporary breakpoint on the target line,
+     * alongside that file's own breakpoints, and continues. The next halt removes it, wherever the game stopped.
+     *
+     * By the time this is called the IDE already shows the session as running. When the line cannot be mapped
+     * to a file the game uses, the game is still halted, so the current halt is shown again rather than
+     * leaving the IDE and the game disagreeing.
+     */
+    override fun runToPosition(position: XSourcePosition, context: XSuspendContext?) {
+        val path = position.file.fileSystem.getNioPath(position.file)
+        val status = path?.let { FileStatus.of(it, target.content) }
+        if (status == null || !status.isInEffect) {
+            print(Vic3Bundle.message("console.runToUnmapped"), ProcessOutputTypes.STDERR)
+            context?.let { session.positionReached(it) }
+            return
+        }
+        runTarget = RunTarget(status.location.vfsPath, position.line + 1)
+        sync(status.location.vfsPath).whenComplete { _, _ -> resuming("continue") }
+    }
+
+    private data class RunTarget(val vfsPath: String, val line: Int)
+
+    @Volatile
+    private var runTarget: RunTarget? = null
 
     private fun resuming(command: String) {
         game.markResumed()
@@ -158,6 +185,11 @@ class Vic3DebugProcess(
                     frame(raw, resolve = false)
                 }
             }
+            // Any halt ends a Run to Cursor, whether it reached the line or stopped somewhere first.
+            runTarget?.let { run ->
+                runTarget = null
+                sync(run.vfsPath)
+            }
             val context = Vic3SuspendContext(Vic3ExecutionStack(frames))
             val top = frames.firstOrNull()
             val hit = if (reason == "breakpoint" && top?.vfsPath != null) {
@@ -207,9 +239,11 @@ class Vic3DebugProcess(
                 status.replacedByMod -> session.setBreakpointInvalid(breakpoint, Vic3Bundle.message("breakpoint.replaced"))
                 status.loadedCopy == null -> session.setBreakpointInvalid(breakpoint, Vic3Bundle.message("breakpoint.missingInLoaded"))
                 else -> {
-                    val list = breakpoints.computeIfAbsent(status.location.vfsPath) { mutableListOf() }
+                    val vfsPath = status.location.vfsPath
+                    val list = breakpoints.computeIfAbsent(vfsPath) { mutableListOf() }
                     synchronized(list) { list.removeIf { it == breakpoint }; list += breakpoint }
-                    sync(status.location.vfsPath, if (status.matchesLoadedCopy) null else Vic3Bundle.message("breakpoint.differs"))
+                    if (status.matchesLoadedCopy) warnings.remove(vfsPath) else warnings[vfsPath] = Vic3Bundle.message("breakpoint.differs")
+                    sync(vfsPath)
                 }
             }
         }
@@ -217,18 +251,29 @@ class Vic3DebugProcess(
         override fun unregisterBreakpoint(breakpoint: XLineBreakpoint<Vic3BreakpointProperties>, temporary: Boolean) {
             for ((path, list) in breakpoints) {
                 val removed = synchronized(list) { list.remove(breakpoint) }
-                if (removed) sync(path, null)
+                if (removed) sync(path)
             }
         }
     }
 
-    /** Sends a file's complete breakpoint list, then reports each breakpoint's verification back to the gutter. */
-    private fun sync(vfsPath: String, warning: String?) {
-        val list = breakpoints[vfsPath] ?: return
+    /** Why breakpoints in a file may not line up, by VFS path: the open copy differs from the loaded one. */
+    private val warnings = ConcurrentHashMap<String, String>()
+
+    /**
+     * Sends a file's complete breakpoint list, plus a pending Run to Cursor target in that file, then reports
+     * each breakpoint's verification back to the gutter.
+     */
+    private fun sync(vfsPath: String): CompletableFuture<JsonObject> {
+        val list = breakpoints[vfsPath] ?: mutableListOf()
         val sent = synchronized(list) { list.filter { toDap(it) != null } }
         val skipped = synchronized(list) { list.filter { toDap(it) == null } }
         skipped.forEach { session.setBreakpointInvalid(it, Vic3Bundle.message("breakpoint.nothingToDo")) }
-        val request = connection.request("setBreakpoints", setBreakpointsArgs(vfsPath, JsonArray(sent.mapNotNull(::toDap))))
+        val dap = sent.mapNotNull(::toDap).toMutableList()
+        runTarget?.takeIf { it.vfsPath == vfsPath && sent.none { bp -> bp.line + 1 == it.line } }?.let { run ->
+            dap += buildJsonObject { put("line", JsonPrimitive(run.line)) } // after the real ones, so indexes still match
+        }
+        val warning = warnings[vfsPath]
+        val request = connection.request("setBreakpoints", setBreakpointsArgs(vfsPath, JsonArray(dap)))
         request.handleOnPool { body, error ->
             if (error != null) {
                 sent.forEach { session.setBreakpointInvalid(it, error.message) }
@@ -244,6 +289,7 @@ class Vic3DebugProcess(
                 }
             }
         }
+        return request
     }
 
     /**
