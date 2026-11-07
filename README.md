@@ -63,33 +63,6 @@ skipped unless you ask for them with `gradlew test -Plive`. One of them halts th
 game briefly. `LiveMappingTest` also needs `VIC3_WORKING_COPY_FILE` set to a
 script file in a working copy of a mod in your playset.
 
-## Releasing
-
-Run the **Release** workflow from the Actions tab. Pick the part of the version to
-increase (major, feature or patch) and whether to publish on the JetBrains
-Marketplace. The workflow:
-
-1. takes the highest release tag and increases it. The first release keeps the
-   version in `gradle.properties`.
-2. runs the tests, builds the plugin and runs the Plugin Verifier.
-3. commits the new version to `gradle.properties` and pushes it with a tag.
-4. creates a GitHub release with the plugin zip and the commits since the last
-   release.
-5. publishes to the Marketplace, but only for releases from `main`. Releases from
-   other branches become GitHub pre-releases.
-
-The Marketplace job runs in the `jetbrains-marketplace` environment. Its secrets:
-
-| Secret | |
-|---|---|
-| `PUBLISH_TOKEN` | Required. A Marketplace token, from **My Tokens** in your JetBrains Marketplace profile. |
-| `CERTIFICATE_CHAIN`, `PRIVATE_KEY`, `PRIVATE_KEY_PASSWORD` | Optional. Sign the plugin yourself; without them the Marketplace signs it. |
-
-Restrict the environment's deployment branches to `main`, so no other branch can
-reach the token. The Marketplace only accepts updates to an existing plugin, so the
-first version has to be uploaded by hand at
-[plugins.jetbrains.com](https://plugins.jetbrains.com/plugin/add).
-
 ## Further reading
 
 - [docs/SCRIPT_DEBUGGER.md](docs/SCRIPT_DEBUGGER.md) describes the game's debug
@@ -97,7 +70,3 @@ first version has to be uploaded by hand at
   accepts, the protocol's quirks, and how editor files map to loaded files.
 - [tools/dapprobe](tools/dapprobe) is a small Go client that replays DAP sessions
   from a script, for checking a protocol question against the game.
-
-## Licence
-
-[MIT](LICENSE)
