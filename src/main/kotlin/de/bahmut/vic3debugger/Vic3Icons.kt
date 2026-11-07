@@ -8,6 +8,9 @@ import javax.swing.Icon
 object Vic3Icons {
     private fun load(name: String): Icon = IconLoader.getIcon("/icons/$name.svg", Vic3Icons::class.java)
 
+    /** The plugin icon: the run configuration and the editor indicator. META-INF/pluginIcon.svg is its 40 px form. */
+    @JvmField val Plugin = load("plugin")
+
     @JvmField val Scope = load("value_scope")
     @JvmField val Flag = load("value_flag")
     @JvmField val Boolean = load("value_boolean")

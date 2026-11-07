@@ -11,6 +11,7 @@ import com.intellij.openapi.editor.toolbar.floating.AbstractFloatingToolbarProvi
 import com.intellij.openapi.editor.toolbar.floating.FloatingToolbarComponent
 import com.intellij.openapi.util.Disposer
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.ui.MessageType
 import com.intellij.openapi.ui.popup.Balloon
@@ -19,6 +20,7 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.ui.awt.RelativePoint
 import com.intellij.openapi.util.text.StringUtil
 import de.bahmut.vic3debugger.Vic3Bundle
+import de.bahmut.vic3debugger.Vic3Icons
 import de.bahmut.vic3debugger.mapping.FileMapper
 import de.bahmut.vic3debugger.mapping.FileStatus
 import kotlinx.coroutines.Dispatchers
@@ -34,7 +36,8 @@ import java.awt.event.MouseEvent
  * attaches or detaches.
  */
 class LoadedModToolbarProvider : AbstractFloatingToolbarProvider(ACTION_GROUP) {
-    override val autoHideable: Boolean = false
+    // Fades out like the IDE's own floating toolbars, and comes back when the editor is active or hovered.
+    override val autoHideable: Boolean = true
 
     override suspend fun isApplicableAsync(dataContext: DataContext): Boolean {
         val file = CommonDataKeys.VIRTUAL_FILE.getData(dataContext) ?: return false
@@ -47,8 +50,12 @@ class LoadedModToolbarProvider : AbstractFloatingToolbarProvider(ACTION_GROUP) {
         val disposed = AtomicBoolean(false)
         Disposer.register(parentDisposable) { disposed.set(true) }
         component.hideImmediately() // until the first snapshot says otherwise
+        // Snapshots arrive every few seconds; only a change in whether the game loads the file shows or hides
+        // the toolbar, otherwise every refresh would bring a faded toolbar back.
+        val lastLoaded = AtomicReference<Boolean?>(null)
         GameContentService.getInstance().subscribe(parentDisposable) { snapshot ->
             val loaded = LoadedModIndicatorAction.statusOf(file, snapshot) != null
+            if (lastLoaded.getAndSet(loaded) == loaded) return@subscribe
             ApplicationManager.getApplication().invokeLater({
                 if (loaded) component.scheduleShow() else component.hideImmediately()
             }, { disposed.get() })
@@ -74,8 +81,7 @@ class LoadedModIndicatorAction : DumbAwareAction() {
         e.presentation.isEnabledAndVisible = true
         e.presentation.icon = when {
             !status.isInEffect || !status.matchesLoadedCopy -> AllIcons.General.Warning
-            running -> AllIcons.Actions.StartDebugger
-            else -> AllIcons.Nodes.Module
+            else -> Vic3Icons.Plugin
         }
         e.presentation.text = Vic3Bundle.message(if (running) "indicator.text.running" else "indicator.text.enabled", owner)
         e.presentation.description = describe(status, running)

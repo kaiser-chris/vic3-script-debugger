@@ -9,11 +9,11 @@ import com.intellij.execution.configurations.RunProfileState
 import com.intellij.execution.configurations.RuntimeConfigurationError
 import com.intellij.execution.configurations.SimpleConfigurationType
 import com.intellij.execution.runners.ExecutionEnvironment
-import com.intellij.icons.AllIcons
 import com.intellij.openapi.options.SettingsEditor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.NotNullLazyValue
 import de.bahmut.vic3debugger.Vic3Bundle
+import de.bahmut.vic3debugger.Vic3Icons
 import de.bahmut.vic3debugger.discovery.LaunchOptions
 
 /** The "Victoria 3 Script Debugger" entry in Run/Debug Configurations: attaches to a running game, like Remote JVM Debug. */
@@ -21,7 +21,7 @@ class Vic3ConfigurationType : SimpleConfigurationType(
     ID,
     Vic3Bundle.message("configuration.type.name"),
     Vic3Bundle.message("configuration.type.description"),
-    NotNullLazyValue.createValue { AllIcons.Actions.StartDebugger },
+    NotNullLazyValue.createValue { Vic3Icons.Plugin },
 ) {
     override fun createTemplateConfiguration(project: Project): RunConfiguration =
         Vic3RunConfiguration(project, this, Vic3Bundle.message("configuration.type.name"))
