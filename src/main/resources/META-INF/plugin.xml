@@ -1,0 +1,28 @@
+<idea-plugin>
+    <id>de.bahmut.vic3-script-debugger</id>
+    <name>Victoria 3 Script Debugger</name>
+    <vendor>Chris Kaiser</vendor>
+
+    <description><![CDATA[
+    Connects to the script debugger built into Victoria 3 (1.15.0 and later), for breakpoints and
+    evaluation in Jomini script. Start the game with <code>-script_debugger</code>, then use
+    <b>Tools | Attach to Victoria 3</b>.
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <resource-bundle>messages.Vic3Bundle</resource-bundle>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <notificationGroup id="Victoria 3 Script Debugger" displayType="BALLOON" key="notification.group.name"/>
+    </extensions>
+
+    <actions>
+        <group id="Vic3ScriptDebugger.ToolsGroup">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+            <separator/>
+            <action id="Vic3ScriptDebugger.Attach" class="de.bahmut.vic3debugger.actions.AttachToGameAction"/>
+            <action id="Vic3ScriptDebugger.Detach" class="de.bahmut.vic3debugger.actions.DetachFromGameAction"/>
+        </group>
+    </actions>
+</idea-plugin>

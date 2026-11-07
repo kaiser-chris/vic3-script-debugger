@@ -4,3 +4,9 @@
 
 # IDE
 /.idea/
+
+# Gradle and the IntelliJ Platform Gradle Plugin
+/.gradle/
+/.intellijPlatform/
+/.kotlin/
+/build/

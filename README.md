@@ -42,6 +42,23 @@ go run . -script sessions/logpoint-tap.jsonl   # non-halting value stream
 It is a probe, not a library — the plugin will speak DAP through IntelliJ, not
 through this. It is a separate Go module so it stays out of the JVM build.
 
+## Building the plugin
+
+The plugin targets IntelliJ IDEA 2026.3 (build 263), which needs Java 25. Gradle
+finds or provisions a Java 25 toolchain itself, and runs on any JDK 17 or later.
+
+```
+gradlew test               # unit tests
+gradlew test -Plive        # also attach to a running game started with -script_debugger
+gradlew runIde             # try it in a sandbox IDE: Tools | Attach to Victoria 3
+gradlew buildPlugin        # build/distributions/vic3-script-debugger-<version>.zip
+```
+
+So far it is a harness only. It finds running `victoria3.exe` processes, reads the
+port from `-script_debugger=<port>` in their command line (6111 when the option
+has no value), attaches, and detaches cleanly. The live test only attaches and
+lists threads: it never halts the game or evaluates anything.
+
 ## The short version
 
 - **Every read needs a halt.** `stackTrace`, `scopes`, `variables` and
@@ -56,11 +73,15 @@ through this. It is a separate Go module so it stays out of the JVM build.
   (`this.gdp`, `this.capital.gdp`, `scope:state.average_sol`) and triggers,
   which come back with the whole localised yes/no breakdown. Effects cannot be
   run from outside.
-- **Unrecognised commands return `success: true` with an empty body.** Thirteen
-  DAP requests are silent no-ops. `initialize` is the only honest capability
+- **Malformed `evaluate` input can crash the game.** Bulk-probing guessed trigger
+  forms caused an access violation. Wrong input can also return a normal-looking
+  `0` or verdict instead of an error, so use documented forms and validate
+  against the catalogue.
+- **Unrecognised commands return `success: true` with an empty body.** Many DAP
+  requests are silent no-ops. `initialize` is the only honest capability
   signal — never feature-detect by probing.
-- **Treat it as single-client.** A second connection gets responses to its own
-  requests but receives no events.
+- **Treat it as single-client.** A second connection may receive no events, and
+  in one test got no responses at all.
 - **Detect by connecting.** On a game too old to have the feature the flag is
   simply an unknown option: no listener, no error, no log line.
 
