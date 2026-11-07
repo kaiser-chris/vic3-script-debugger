@@ -13,27 +13,31 @@ import org.junit.jupiter.api.Test
 import java.nio.file.Files
 import java.nio.file.Paths
 
-/** Maps real working-copy files against the running game's loaded content. Reads files only; sends nothing to the game. */
+/**
+ * Maps a file from a mod's working copy against what the game loaded. Reads files only; sends nothing to
+ * the game. Set VIC3_WORKING_COPY_FILE to a script file inside a working copy of a mod in the current
+ * playset, ideally opened from somewhere other than the folder the game loads it from.
+ */
 @Tag("live")
 class LiveMappingTest {
 
     @Test
-    fun `a mod file a frame names resolves to the loaded copy, and the working copy maps to it`() {
+    fun `a working copy file maps to the copy the game loaded`() {
+        val configured = System.getenv("VIC3_WORKING_COPY_FILE")
+        assumeTrue(!configured.isNullOrBlank(), "VIC3_WORKING_COPY_FILE is not set")
+        val workingCopy = Paths.get(configured!!)
+        assumeTrue(Files.isRegularFile(workingCopy), "VIC3_WORKING_COPY_FILE does not exist: $workingCopy")
+
         val game = GameProcessFinder().find().firstOrNull()
         val gameDir = game?.executable?.let { LoadedContent.gameDirForExecutable(Paths.get(it)) }
         val content = LoadedContent.read(UserDataFolder.default()!!, gameDir)
-        val vfsPath = "common/journal_entries/412_gate_projects.txt"
+        println("Loaded mods: ${content.mods.map { it.name }}")
 
-        val winner = content.winningFile(vfsPath)
-        println("Winning copy: $winner (from ${content.winningModName(vfsPath)})")
-        assertNotNull(winner)
-        assertTrue(content.winningModName(vfsPath)!!.contains("Manaflow"))
-
-        val workingCopy = Paths.get("D:/Development/projects/victoria3/gate/mod", vfsPath)
-        assumeTrue(Files.isRegularFile(workingCopy))
         val status = FileStatus.of(workingCopy, content)
-        println("Working copy: $status")
-        assertEquals(vfsPath, status!!.location.vfsPath)
+        println("Status: $status")
+        assertNotNull(status, "The file is not part of a loaded mod or the base game")
+        assertNotNull(status!!.loadedCopy)
+        assertEquals(status.loadedCopy, content.winningFile(status.location.vfsPath))
         assertTrue(status.isInEffect)
     }
 }

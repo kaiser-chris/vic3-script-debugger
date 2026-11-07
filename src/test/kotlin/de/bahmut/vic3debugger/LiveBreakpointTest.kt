@@ -2,7 +2,6 @@ package de.bahmut.vic3debugger
 
 import de.bahmut.vic3debugger.dap.GameSession
 import de.bahmut.vic3debugger.discovery.GameProcessFinder
-import de.bahmut.vic3debugger.mapping.FileStatus
 import de.bahmut.vic3debugger.mapping.LoadedContent
 import de.bahmut.vic3debugger.mapping.UserDataFolder
 import kotlinx.serialization.json.JsonArray
@@ -19,7 +18,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
-import java.nio.file.Files
 import java.nio.file.Paths
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutionException
@@ -89,20 +87,5 @@ class LiveBreakpointTest {
                 runCatching { req("setBreakpoints", breakpoints()) }
             }
         }
-    }
-
-    @Test
-    fun `an open working copy of a loaded mod maps to the copy the game loaded`() {
-        val userData = UserDataFolder.default()
-        assumeTrue(userData != null)
-        val workingCopy = Paths.get("D:/Development/projects/victoria3/gate/mod/common/on_actions/403_on_action_misc.txt")
-        assumeTrue(Files.isRegularFile(workingCopy), "The Manaflow repository is not at the expected path")
-        val content = LoadedContent.read(userData!!, null)
-        val status = FileStatus.of(workingCopy, content)
-        println("Status: $status")
-        assertNotNull(status)
-        assertTrue(status!!.location.modName!!.contains("Manaflow"))
-        assertEquals("common/on_actions/403_on_action_misc.txt", status.location.vfsPath)
-        assertTrue(status.isInEffect)
     }
 }
