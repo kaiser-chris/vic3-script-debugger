@@ -1,0 +1,207 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release-type:
+        description: 'Release Type'
+        default: 'feature'
+        required: false
+        type: choice
+        options:
+          - 'major'
+          - 'feature'
+          - 'patch'
+      publish:
+        description: 'Publish on the JetBrains Marketplace (only from main)'
+        default: true
+        required: false
+        type: boolean
+
+# One release at a time, so two runs never pick the same version.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.next }}
+      change-notes: ${{ steps.changes.outputs.html }}
+
+    steps:
+      - name: Check Trigger
+        if: github.ref_type != 'branch'
+        run: |
+          echo "::error::Run the release from a branch, not from a tag."
+          exit 1
+
+      - name: Note Skipped Marketplace Release
+        if: inputs.publish && github.ref != 'refs/heads/main'
+        run: echo "::warning::Not publishing to the JetBrains Marketplace, which only happens for releases from main."
+
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # all history and tags, for the version and the change list
+
+      # IntelliJ IDEA 2026.3 needs Java 25.
+      - name: Setup Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Determine Version
+        id: version
+        env:
+          RELEASE_TYPE: ${{ inputs.release-type }}
+        run: |
+          current=$(sed -n 's/^pluginVersion *= *//p' gradle.properties)
+          last=$(git tag --list '[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1)
+          if [ -z "$last" ]; then
+            # The first release ships the version gradle.properties already has.
+            next=$current
+          else
+            IFS=. read -r major minor patch <<< "$last"
+            case "$RELEASE_TYPE" in
+              major) next="$((major + 1)).0.0" ;;
+              feature) next="$major.$((minor + 1)).0" ;;
+              patch) next="$major.$minor.$((patch + 1))" ;;
+              *) echo "::error::Unknown release type '$RELEASE_TYPE'"; exit 1 ;;
+            esac
+          fi
+          if git rev-parse --quiet --verify "refs/tags/$next" > /dev/null; then
+            echo "::error::Tag $next already exists."
+            exit 1
+          fi
+          echo "last=$last" >> "$GITHUB_OUTPUT"
+          echo "next=$next" >> "$GITHUB_OUTPUT"
+          {
+            echo "# Versions"
+            echo "Last Version: **${last:-none}**"
+            echo "Next Version: **$next**"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Collect Changes
+        id: changes
+        run: |
+          since=$(git describe --tags --abbrev=0 --match '[0-9]*.[0-9]*.[0-9]*' 2> /dev/null || true)
+          subjects=$(git log "${since:+$since..}HEAD" --no-merges --pretty=format:'%s')
+          markdown=$(printf '%s\n' "$subjects" | sed 's/^/- /')
+          html="<ul>$(printf '%s\n' "$subjects" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's|.*|<li>&</li>|' | tr -d '\n')</ul>"
+          delimiter="EOF_$(openssl rand -hex 8)"
+          {
+            echo "markdown<<$delimiter"
+            echo "$markdown"
+            echo "$delimiter"
+            echo "html<<$delimiter"
+            echo "$html"
+            echo "$delimiter"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "# Commits"
+            echo "$markdown"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Update Version
+        env:
+          NEXT: ${{ steps.version.outputs.next }}
+        run: sed -i "s/^pluginVersion *=.*/pluginVersion = $NEXT/" gradle.properties
+
+      # Tests, the plugin zip, and the Plugin Verifier against the IDE the plugin targets.
+      - name: Build
+        env:
+          PLUGIN_CHANGE_NOTES: ${{ steps.changes.outputs.html }}
+        run: ./gradlew test buildPlugin verifyPlugin --console=plain
+
+      - name: Upload Reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports
+          path: build/reports/
+
+      - name: Push Version and Tag
+        env:
+          NEXT: ${{ steps.version.outputs.next }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git diff --quiet || git commit -am "Release $NEXT"
+          git tag --annotate "$NEXT" --message "Release $NEXT"
+          git push --atomic origin "HEAD:refs/heads/$GITHUB_REF_NAME" "refs/tags/$NEXT"
+
+      - name: Upload Release Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: vic3-script-debugger-${{ steps.version.outputs.next }}
+          path: build/distributions/vic3-script-debugger-${{ steps.version.outputs.next }}.zip
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEXT: ${{ steps.version.outputs.next }}
+          CHANGES: ${{ steps.changes.outputs.markdown }}
+        run: |
+          {
+            echo "Released a new version of the **Victoria 3 Script Debugger** plugin."
+            echo
+            echo "Install the zip with **Settings › Plugins › ⚙ › Install Plugin from Disk**."
+            echo
+            echo "### Commits:"
+            echo "$CHANGES"
+          } > release-notes.md
+          # Releases from other branches than main are marked as pre-releases.
+          prerelease=$([ "$GITHUB_REF" = refs/heads/main ] || echo --prerelease)
+          gh release create "$NEXT" "build/distributions/vic3-script-debugger-$NEXT.zip" \
+            --verify-tag --title "$NEXT" --notes-file release-notes.md $prerelease
+
+  publish:
+    name: Publish to JetBrains Marketplace
+    if: inputs.publish && github.ref == 'refs/heads/main'
+    needs: release
+    runs-on: ubuntu-latest
+    # Holds the Marketplace token. Restrict its deployment branches to main in the repository settings, so no
+    # other branch can reach the token, whatever its copy of this workflow says.
+    environment: jetbrains-marketplace
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ needs.release.outputs.version }}
+
+      - name: Setup Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      # Signing is optional: without CERTIFICATE_CHAIN and PRIVATE_KEY the Marketplace signs the plugin itself.
+      - name: Publish
+        env:
+          PUBLISH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+          CERTIFICATE_CHAIN: ${{ secrets.CERTIFICATE_CHAIN }}
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+          PRIVATE_KEY_PASSWORD: ${{ secrets.PRIVATE_KEY_PASSWORD }}
+          PLUGIN_CHANGE_NOTES: ${{ needs.release.outputs.change-notes }}
+        run: |
+          if [ -z "$PUBLISH_TOKEN" ]; then
+            echo "::error::PUBLISH_TOKEN is not set in the jetbrains-marketplace environment."
+            exit 1
+          fi
+          ./gradlew publishPlugin --console=plain
