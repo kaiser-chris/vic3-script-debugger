@@ -1,0 +1,4 @@
+# The wrapper script must keep LF endings to run under sh, even on a Windows checkout.
+gradlew text eol=lf
+*.bat text eol=crlf
+*.jar binary
