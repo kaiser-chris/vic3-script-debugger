@@ -5,7 +5,12 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.DataContext
+import com.intellij.openapi.Disposable
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.editor.toolbar.floating.AbstractFloatingToolbarProvider
+import com.intellij.openapi.editor.toolbar.floating.FloatingToolbarComponent
+import com.intellij.openapi.util.Disposer
+import java.util.concurrent.atomic.AtomicBoolean
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.ui.MessageType
 import com.intellij.openapi.ui.popup.Balloon
@@ -20,15 +25,34 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.awt.event.MouseEvent
 
-/** Shows the indicator in the editor's top-right floating toolbar, only for files the game loads. */
+/**
+ * Shows the indicator in the editor's top-right floating toolbar while the game loads the file.
+ *
+ * The IDE asks whether a provider applies once per editor, so that answer only depends on the file: any
+ * script file in a mod or game folder. Whether the game loads it changes with the game, so each editor's
+ * toolbar is shown or hidden again whenever a new snapshot arrives, including right after a debug session
+ * attaches or detaches.
+ */
 class LoadedModToolbarProvider : AbstractFloatingToolbarProvider(ACTION_GROUP) {
     override val autoHideable: Boolean = false
 
     override suspend fun isApplicableAsync(dataContext: DataContext): Boolean {
         val file = CommonDataKeys.VIRTUAL_FILE.getData(dataContext) ?: return false
-        // Wait for the first snapshot: this is decided once per editor, and an answer of no is final.
-        val snapshot = GameContentService.getInstance().snapshot()
-        return withContext(Dispatchers.IO) { LoadedModIndicatorAction.statusOf(file, snapshot) != null }
+        return withContext(Dispatchers.IO) { LoadedModIndicatorAction.isCandidate(file) }
+    }
+
+    override fun register(dataContext: DataContext, component: FloatingToolbarComponent, parentDisposable: Disposable) {
+        super.register(dataContext, component, parentDisposable)
+        val file = CommonDataKeys.VIRTUAL_FILE.getData(dataContext) ?: return
+        val disposed = AtomicBoolean(false)
+        Disposer.register(parentDisposable) { disposed.set(true) }
+        component.hideImmediately() // until the first snapshot says otherwise
+        GameContentService.getInstance().subscribe(parentDisposable) { snapshot ->
+            val loaded = LoadedModIndicatorAction.statusOf(file, snapshot) != null
+            ApplicationManager.getApplication().invokeLater({
+                if (loaded) component.scheduleShow() else component.hideImmediately()
+            }, { disposed.get() })
+        }
     }
 
     companion object {
@@ -87,6 +111,12 @@ class LoadedModIndicatorAction : DumbAwareAction() {
 
     companion object {
         /** The file's status against what the game loaded, and whether a game is running; null when the game does not load it. */
+        /** Whether a file could ever be loaded by the game: a script file in a mod root or a game folder. Needs no game. */
+        fun isCandidate(file: VirtualFile): Boolean {
+            val path = file.fileSystem.getNioPath(file) ?: return false
+            return FileMapper.isScriptFile(path) && FileMapper.originOf(path) != null
+        }
+
         fun statusOf(
             file: VirtualFile,
             snapshot: GameContentService.Snapshot? = GameContentService.getInstance().current(),

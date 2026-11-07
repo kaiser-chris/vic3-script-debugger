@@ -1,6 +1,9 @@
 package de.bahmut.vic3debugger.editor
 
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.util.Disposer
+import java.util.concurrent.CopyOnWriteArrayList
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import de.bahmut.vic3debugger.discovery.GameProcess
@@ -50,20 +53,43 @@ class GameContentService(private val scope: CoroutineScope) {
     suspend fun snapshot(): Snapshot {
         snapshot?.takeUnless { it.isStale() }?.let { return it }
         return mutex.withLock {
-            snapshot?.takeUnless { it.isStale() } ?: take().also { snapshot = it }
+            snapshot?.takeUnless { it.isStale() } ?: take().also(::publish)
         }
     }
 
+    /**
+     * Takes a new snapshot in the background and tells every listener. Debug sessions call this when they
+     * start and end, so open editors update as soon as a game is attached or detached.
+     */
     fun refresh() {
         if (!refreshing.compareAndSet(false, true)) return
         scope.launch {
             try {
-                mutex.withLock { snapshot = take() }
+                mutex.withLock { publish(take()) }
             } finally {
                 refreshing.set(false)
             }
         }
     }
+
+    /** Calls [listener] on a background thread with every new snapshot until [parent] is disposed, and now with the current one. */
+    fun subscribe(parent: Disposable, listener: (Snapshot) -> Unit) {
+        listeners += listener
+        Disposer.register(parent) { listeners -= listener }
+        val last = snapshot
+        if (last != null && !last.isStale()) scope.launch(Dispatchers.IO) { listener(last) } else refresh()
+    }
+
+    private fun publish(taken: Snapshot) {
+        snapshot = taken
+        for (listener in listeners) {
+            scope.launch(Dispatchers.IO) {
+                runCatching { listener(taken) }.onFailure { thisLogger().error("Updating for new game content failed", it) }
+            }
+        }
+    }
+
+    private val listeners = CopyOnWriteArrayList<(Snapshot) -> Unit>()
 
     private suspend fun take(): Snapshot = withContext(Dispatchers.IO) {
         val games = runCatching { GameProcessFinder().find() }

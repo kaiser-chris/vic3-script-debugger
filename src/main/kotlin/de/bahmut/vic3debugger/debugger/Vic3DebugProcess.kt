@@ -17,6 +17,7 @@ import com.intellij.xdebugger.evaluation.XDebuggerEditorsProvider
 import com.intellij.xdebugger.frame.XSuspendContext
 import de.bahmut.vic3debugger.Vic3Bundle
 import de.bahmut.vic3debugger.dap.GameSession
+import de.bahmut.vic3debugger.editor.GameContentService
 import de.bahmut.vic3debugger.mapping.FileStatus
 import de.bahmut.vic3debugger.run.GameTarget
 import kotlinx.serialization.json.JsonArray
@@ -70,6 +71,7 @@ class Vic3DebugProcess(
 
     override fun sessionInitialized() {
         processHandler.startNotify()
+        GameContentService.getInstance().refresh() // re-check every open editor against the attached game
         val where = target.process?.let { Vic3Bundle.message("console.attached.pid", it.pid) } ?: ""
         print(Vic3Bundle.message("console.attached", target.port, where), ProcessOutputTypes.SYSTEM)
         if (target.content.mods.isNotEmpty()) {
@@ -105,6 +107,7 @@ class Vic3DebugProcess(
      */
     private fun cleanUp() {
         if (!cleanedUp.compareAndSet(false, true)) return
+        GameContentService.getInstance().refresh()
         if (!connection.isOpen) return
         runCatching {
             for (path in breakpoints.keys) {
